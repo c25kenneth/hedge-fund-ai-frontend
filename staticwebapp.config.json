@@ -6,5 +6,9 @@
     {
       "route": "/chat"
     }
-  ]
+  ], 
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": ["/api/*"]
+  }
 }

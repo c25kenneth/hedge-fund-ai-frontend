@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
 
-const API_URL = 'http://127.0.0.1:5050';
+const API_URL = import.meta.env.VITE_API_URL;
 const CHATBOT_UUID = "00000000-0000-0000-0000-000000000001";
 
 export default function useChatMessages(navigate) {

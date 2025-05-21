@@ -29,7 +29,7 @@ const App = () => {
 
         if (event === 'SIGNED_IN' && session?.user) {
           try {
-            const response = await fetch("http://127.0.0.1:5000/createUser", {
+            const response = await fetch(`${import.meta.env.VITE_API_URL}/createUser`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ uid: session.user.id }),

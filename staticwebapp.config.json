@@ -6,8 +6,5 @@
     {
       "route": "/chat"
     }
-  ],
-  "platform": {
-    "apiRuntime": "node:20"
-  }
+  ]
 }

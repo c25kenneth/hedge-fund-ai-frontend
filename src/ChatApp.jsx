@@ -16,6 +16,7 @@ export default function ChatApp() {
     error,
     isLoading,
     isFetching,
+    loadingMessageId,
     handleRefresh,
     signOutAndRedirect,
     messagesEndRef
@@ -47,7 +48,11 @@ export default function ChatApp() {
           </div>
         )}
         {messages.map((msg) => (
-          <MessageBubble key={msg.id} msg={msg} />
+          <MessageBubble 
+            key={msg.id} 
+            msg={msg} 
+            isLoading={msg.id === loadingMessageId && msg.sender === 'ai' && !msg.text}
+          />
         ))}
         <div ref={messagesEndRef} />
       </div>

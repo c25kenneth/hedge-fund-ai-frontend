@@ -12,6 +12,7 @@ export default function useChatMessages(navigate) {
   const [isFetching, setIsFetching] = useState(true);
   const [error, setError] = useState(null);
   const [userId, setUserId] = useState(null);
+  const [loadingMessageId, setLoadingMessageId] = useState(null);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -48,7 +49,7 @@ export default function useChatMessages(navigate) {
     }
   };
 
-  const fetchMessages = async (id = userId) => {
+  const fetchMessages = async (id = userId, preserveRecentSources = false) => {
     setIsFetching(true);
     setError(null);
     try {
@@ -65,11 +66,21 @@ export default function useChatMessages(navigate) {
       const data = await res.json();
       console.log('Fetched chat data:', data);
   
+      let existingSources = {};
+      if (preserveRecentSources) {
+        messages.slice(-5).forEach(msg => {
+          if (msg.sources && msg.sources.length > 0) {
+            existingSources[msg.text] = msg.sources;
+          }
+        });
+      }
+  
       const formatted = data.map(msg => ({
         id: msg.id,
         sender: msg.sender_uid === CHATBOT_UUID ? 'ai' : 'user',
         text: msg.message_text,
-        timestamp: msg.timestamp
+        timestamp: msg.timestamp,
+        sources: existingSources[msg.message_text] || msg.sources || []
       }));
   
       const unformatted = data.map(msg => ({
@@ -86,7 +97,6 @@ export default function useChatMessages(navigate) {
       setIsFetching(false);
     }
   };
-  
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
@@ -96,26 +106,44 @@ export default function useChatMessages(navigate) {
     setError(null);
 
     const tempId = Date.now();
-    setMessages(prev => [...prev, { id: tempId, sender: 'user', text: msg }, { id: tempId + 1, sender: 'ai', text: '' }]);
+    const aiMessageId = tempId + 1;
+    
+    setLoadingMessageId(aiMessageId);
+    
+    setMessages(prev => [...prev, 
+      { id: tempId, sender: 'user', text: msg }, 
+      { id: aiMessageId, sender: 'ai', text: '', sources: [] }
+    ]);
 
     try {
       let aiText = '';
-      await sendToBot(msg, chunk => {
-        aiText += chunk;
+      let sources = [];
+      
+      await sendToBot(msg, (chunk, metadata) => {
+        if (metadata) {
+          sources = metadata.sources || [];
+        } else {
+          aiText += chunk;
+        }
+        
         setMessages(prev => {
           const updated = [...prev];
-          const aiIndex = updated.findIndex(m => m.id === tempId + 1);
-          if (aiIndex !== -1) updated[aiIndex].text = aiText;
+          const aiIndex = updated.findIndex(m => m.id === aiMessageId);
+          if (aiIndex !== -1) {
+            updated[aiIndex].text = aiText;
+            updated[aiIndex].sources = sources;
+          }
           return updated;
         });
       });
-      setTimeout(() => fetchMessages(), 1000);
+      
     } catch (err) {
       console.error('Send error', err);
       setError("Failed to send message.");
-      setMessages(prev => prev.filter(m => m.id !== tempId + 1));
+      setMessages(prev => prev.filter(m => m.id !== aiMessageId));
     } finally {
       setIsLoading(false);
+      setLoadingMessageId(null);
     }
   };
 
@@ -125,12 +153,68 @@ export default function useChatMessages(navigate) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message, uid: userId, messageContext: unformattedMessages })
     });
+    
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    
     const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      onChunk(decoder.decode(value, { stream: true }));
+    let accumulatedData = '';
+    
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        
+        const decoder = new TextDecoder('utf-8');
+        const chunk = decoder.decode(value, { stream: true });
+        
+        accumulatedData += chunk;
+        
+        if (accumulatedData.includes('[[META]]')) {
+          const parts = accumulatedData.split('[[META]]');
+          const textPart = parts[0];
+          const metaPart = parts[1];
+          
+          onChunk(textPart, null);
+          
+          try {
+            const metadata = JSON.parse(metaPart);
+            onChunk('', metadata);
+          } catch (e) {
+            console.error('Failed to parse metadata:', e);
+          }
+          break;
+        } else {
+
+          const safeBreakPoints = ['. ', '.\n', '? ', '!\n', '! '];
+          let lastSafePoint = -1;
+          
+          for (const breakPoint of safeBreakPoints) {
+            const index = accumulatedData.lastIndexOf(breakPoint);
+            if (index > lastSafePoint) {
+              lastSafePoint = index + breakPoint.length;
+            }
+          }
+          
+          if (lastSafePoint > 0) {
+            const safeText = accumulatedData.substring(0, lastSafePoint);
+            if (!safeText.includes('【') || safeText.lastIndexOf('】') > safeText.lastIndexOf('【')) {
+              onChunk(safeText, null);
+            }
+          }
+        }
+      }
+      
+      if (!accumulatedData.includes('[[META]]')) {
+        onChunk(accumulatedData, null);
+      }
+      
+    } catch (error) {
+      console.error('Streaming error:', error);
+      throw error;
+    } finally {
+      reader.releaseLock();
     }
   };
 
@@ -142,6 +226,7 @@ export default function useChatMessages(navigate) {
     error,
     isLoading,
     isFetching,
+    loadingMessageId,
     handleRefresh: () => fetchMessages(userId),
     signOutAndRedirect: async () => {
       await supabase.auth.signOut();

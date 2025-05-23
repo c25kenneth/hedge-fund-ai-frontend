@@ -82,7 +82,7 @@ export default function MessageBubble({ msg, isLoading = false }) {
     >
       <ReactMarkdown>{cleanText || msg.text}</ReactMarkdown>
       
-      {msg.sender === 'ai' && citationLinks.length > 0 && (
+      {/* {msg.sender === 'ai' && citationLinks.length > 0 && (
         <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
           <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Citations:</div>
           <div className="flex flex-wrap gap-1">
@@ -101,7 +101,7 @@ export default function MessageBubble({ msg, isLoading = false }) {
             ))}
           </div>
         </div>
-      )}
+      )} */}
       
       {/* {msg.sender === 'ai' && additionalSources.length > 0 && (
         <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">

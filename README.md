@@ -1,6 +1,6 @@
 # Hedge Fund AI Chat — Frontend (React)
 
-This is the frontend for the Hedge Fund AI Chat application. It provides a real-time chat interface powered by an AI assistant. The app uses Supabase for authentication and connects to a Python backend for streaming AI responses. Link to backend code [here](https://github.com/c25kenneth/hedge-fund-ai-backend)
+This is the frontend for the Hedge Fund AI Chat application. It provides a real-time chat interface powered by an AI assistant. The app uses Supabase for authentication and connects to a Python backend for streaming AI responses. [Link to backend code here](https://github.com/c25kenneth/hedge-fund-ai-backend)
 
 ---
 

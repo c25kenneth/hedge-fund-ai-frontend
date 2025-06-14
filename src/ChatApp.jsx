@@ -19,7 +19,8 @@ export default function ChatApp() {
     loadingMessageId,
     handleRefresh,
     signOutAndRedirect,
-    messagesEndRef
+    messagesEndRef, 
+    handleDocumentUpload,
   } = useChatMessages(navigate);
 
   useEffect(() => {
@@ -57,7 +58,7 @@ export default function ChatApp() {
         <div ref={messagesEndRef} />
       </div>
 
-      <ChatInput value={input} onChange={setInput} onSend={handleSend} isLoading={isLoading} />
+      <ChatInput value={input} onChange={setInput} onSend={handleSend} isLoading={isLoading} onFileUpload={handleDocumentUpload}/>
     </div>
   );
 }

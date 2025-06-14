@@ -24,7 +24,6 @@ export default function useChatMessages(navigate) {
           return;
         }
         setUserId(session.user.id);
-        await createUser(session.user.id);
         await fetchMessages(session.user.id);
       } catch (error) {
         console.error("Auth error:", error);
@@ -36,20 +35,7 @@ export default function useChatMessages(navigate) {
     checkAuth();
   }, [navigate]);
 
-  const createUser = async (uid) => {
-    try {
-      const res = await fetch(`${API_URL}/createUser`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid })
-      });
-      if (!res.ok) console.warn('User creation warning');
-    } catch (err) {
-      console.error('Create user error', err);
-    }
-  };
-
-  const fetchMessages = async (id = userId, preserveRecentSources = false) => {
+  const fetchMessages = async (id = userId) => {
     setIsFetching(true);
     setError(null);
     try {
@@ -66,21 +52,11 @@ export default function useChatMessages(navigate) {
       const data = await res.json();
       console.log('Fetched chat data:', data);
   
-      let existingSources = {};
-      if (preserveRecentSources) {
-        messages.slice(-5).forEach(msg => {
-          if (msg.sources && msg.sources.length > 0) {
-            existingSources[msg.text] = msg.sources;
-          }
-        });
-      }
-  
       const formatted = data.map(msg => ({
         id: msg.id,
         sender: msg.sender_uid === CHATBOT_UUID ? 'ai' : 'user',
         text: msg.message_text,
-        timestamp: msg.timestamp,
-        sources: existingSources[msg.message_text] || msg.sources || []
+        timestamp: msg.timestamp
       }));
   
       const unformatted = data.map(msg => ({
@@ -112,26 +88,20 @@ export default function useChatMessages(navigate) {
     
     setMessages(prev => [...prev, 
       { id: tempId, sender: 'user', text: msg }, 
-      { id: aiMessageId, sender: 'ai', text: '', sources: [] }
+      { id: aiMessageId, sender: 'ai', text: '' }
     ]);
 
     try {
       let aiText = '';
-      let sources = [];
       
-      await sendToBot(msg, (chunk, metadata) => {
-        if (metadata) {
-          sources = metadata.sources || [];
-        } else {
-          aiText += chunk;
-        }
+      await sendToBot(msg, (chunk) => {
+        aiText += chunk;
         
         setMessages(prev => {
           const updated = [...prev];
           const aiIndex = updated.findIndex(m => m.id === aiMessageId);
           if (aiIndex !== -1) {
             updated[aiIndex].text = aiText;
-            updated[aiIndex].sources = sources;
           }
           return updated;
         });
@@ -151,7 +121,10 @@ export default function useChatMessages(navigate) {
     const res = await fetch(`${API_URL}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, uid: userId, messageContext: unformattedMessages })
+      body: JSON.stringify({ 
+        message: message, 
+        uid: userId 
+      })
     });
     
     if (!res.ok) {
@@ -159,59 +132,104 @@ export default function useChatMessages(navigate) {
     }
     
     const reader = res.body.getReader();
-    let accumulatedData = '';
+    const decoder = new TextDecoder('utf-8');
     
     try {
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
         
-        const decoder = new TextDecoder('utf-8');
         const chunk = decoder.decode(value, { stream: true });
         
-        accumulatedData += chunk;
-        
-        if (accumulatedData.includes('[[META]]')) {
-          const parts = accumulatedData.split('[[META]]');
-          const textPart = parts[0];
-          const metaPart = parts[1];
-          
-          onChunk(textPart, null);
-          
-          try {
-            const metadata = JSON.parse(metaPart);
-            onChunk('', metadata);
-          } catch (e) {
-            console.error('Failed to parse metadata:', e);
-          }
-          break;
-        } else {
-
-          const safeBreakPoints = ['. ', '.\n', '? ', '!\n', '! '];
-          let lastSafePoint = -1;
-          
-          for (const breakPoint of safeBreakPoints) {
-            const index = accumulatedData.lastIndexOf(breakPoint);
-            if (index > lastSafePoint) {
-              lastSafePoint = index + breakPoint.length;
-            }
-          }
-          
-          if (lastSafePoint > 0) {
-            const safeText = accumulatedData.substring(0, lastSafePoint);
-            if (!safeText.includes('【') || safeText.lastIndexOf('】') > safeText.lastIndexOf('【')) {
-              onChunk(safeText, null);
-            }
-          }
+        if (chunk) {
+          onChunk(chunk);
         }
-      }
-      
-      if (!accumulatedData.includes('[[META]]')) {
-        onChunk(accumulatedData, null);
       }
       
     } catch (error) {
       console.error('Streaming error:', error);
+      throw error;
+    } finally {
+      reader.releaseLock();
+    }
+  };
+
+  const handleDocumentUpload = async (file, message = '') => {
+    if (!file || isLoading) return;
+    
+    setIsLoading(true);
+    setError(null);
+
+    const tempId = Date.now();
+    const aiMessageId = tempId + 1;
+    
+    setLoadingMessageId(aiMessageId);
+    
+    const displayMessage = message || `Uploaded: ${file.name}`;
+    
+    setMessages(prev => [...prev, 
+      { id: tempId, sender: 'user', text: displayMessage }, 
+      { id: aiMessageId, sender: 'ai', text: '' }
+    ]);
+
+    try {
+      let aiText = '';
+      
+      await sendDocumentToBot(file, message, (chunk) => {
+        aiText += chunk;
+        
+        setMessages(prev => {
+          const updated = [...prev];
+          const aiIndex = updated.findIndex(m => m.id === aiMessageId);
+          if (aiIndex !== -1) {
+            updated[aiIndex].text = aiText;
+          }
+          return updated;
+        });
+      });
+      
+    } catch (err) {
+      console.error('Document upload error', err);
+      setError("Failed to upload document.");
+      setMessages(prev => prev.filter(m => m.id !== aiMessageId));
+    } finally {
+      setIsLoading(false);
+      setLoadingMessageId(null);
+    }
+  };
+
+  const sendDocumentToBot = async (file, message, onChunk) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('uid', userId);
+    formData.append('message', message);
+
+    const res = await fetch(`${API_URL}/chatDocument`, {
+      method: 'POST',
+      body: formData // No Content-Type header for FormData
+    });
+    
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        
+        if (chunk) {
+          onChunk(chunk);
+        }
+      }
+      
+    } catch (error) {
+      console.error('Document streaming error:', error);
       throw error;
     } finally {
       reader.releaseLock();
@@ -223,6 +241,7 @@ export default function useChatMessages(navigate) {
     input,
     setInput,
     handleSend,
+    handleDocumentUpload,
     error,
     isLoading,
     isFetching,

@@ -165,7 +165,7 @@ export default function useChatMessages(navigate) {
     
     setLoadingMessageId(aiMessageId);
     
-    const displayMessage = message || `Uploaded: ${file.name}`;
+    const displayMessage = `Uploaded: ${file.name} - ` + message || `Uploaded: ${file.name}`;
     
     setMessages(prev => [...prev, 
       { id: tempId, sender: 'user', text: displayMessage }, 

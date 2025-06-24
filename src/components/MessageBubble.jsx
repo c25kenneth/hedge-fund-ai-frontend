@@ -1,7 +1,8 @@
 import ReactMarkdown from 'react-markdown';
 import { Loader2 } from 'lucide-react';
+import remarkGfm from 'remark-gfm';
 
-export default function MessageBubble({ msg, isLoading = false }) {
+export default function MessageBubble({ msg, isLoading = false, onCitationClick }) {
 
   if (msg.sender === 'ai' && (isLoading || !msg.text)) {
     return (
@@ -22,7 +23,31 @@ export default function MessageBubble({ msg, isLoading = false }) {
           : 'mr-auto bg-white dark:bg-gray-700 text-gray-800 dark:text-white'
       }`}
     >
-      <ReactMarkdown>{msg.text}</ReactMarkdown>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ node, href, ...props }) => {
+            const isPdf = href && href.endsWith('.pdf');
+            return (
+              <a
+                {...props}
+                onClick={(e) => {
+                  if (isPdf) {
+                    e.preventDefault();
+                    onCitationClick?.(href);
+                  }
+                }}
+                className="text-blue-600 underline hover:text-blue-800 dark:text-blue-400"
+                target={isPdf ? undefined : '_blank'}
+                rel="noopener noreferrer"
+              />
+            );
+          }
+        }}
+      >
+        {msg.text}
+      </ReactMarkdown>
+
     </div>
   );
 }

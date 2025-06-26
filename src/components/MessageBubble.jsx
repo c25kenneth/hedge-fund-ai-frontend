@@ -3,6 +3,15 @@ import { Loader2 } from 'lucide-react';
 import remarkGfm from 'remark-gfm';
 
 export default function MessageBubble({ msg, isLoading = false, onCitationClick }) {
+  const { citations = [] } = msg;
+
+  const handleLinkClick = (href) => {
+    const matched = citations.find(c => c.blob_url === href);
+    if (matched) {
+      console.log("Bounding Polygon:", matched.bounding_polygon);
+    }
+    onCitationClick?.(href);
+  };
 
   if (msg.sender === 'ai' && (isLoading || !msg.text)) {
     return (
@@ -34,7 +43,7 @@ export default function MessageBubble({ msg, isLoading = false, onCitationClick 
                 onClick={(e) => {
                   if (isPdf) {
                     e.preventDefault();
-                    onCitationClick?.(href);
+                    handleLinkClick(href);
                   }
                 }}
                 className="text-blue-600 underline hover:text-blue-800 dark:text-blue-400"
@@ -47,7 +56,6 @@ export default function MessageBubble({ msg, isLoading = false, onCitationClick 
       >
         {msg.text}
       </ReactMarkdown>
-
     </div>
   );
 }

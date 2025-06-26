@@ -44,26 +44,27 @@ export default function useChatMessages(navigate) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid: id })
       });
-  
+
       if (!res.ok) {
         throw new Error(`API responded with status ${res.status}`);
       }
-  
+
       const data = await res.json();
       console.log('Fetched chat data:', data);
-  
+
       const formatted = data.map(msg => ({
         id: msg.id,
         sender: msg.sender_uid === CHATBOT_UUID ? 'ai' : 'user',
         text: msg.message_text,
-        timestamp: msg.timestamp
+        timestamp: msg.timestamp,
+        citations: msg.citations || []
       }));
-  
+
       const unformatted = data.map(msg => ({
         role: msg.sender_uid === CHATBOT_UUID ? 'assistant' : 'user',
         content: msg.message_text
       }));
-  
+
       setMessages(formatted);
       setUnformattedMessages(unformatted);
     } catch (err) {
@@ -75,38 +76,49 @@ export default function useChatMessages(navigate) {
   };
 
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
-    const msg = input.trim();
-    setInput('');
-    setIsLoading(true);
-    setError(null);
+  if (!input.trim() || isLoading) return;
 
-    const tempId = Date.now();
-    const aiMessageId = tempId + 1;
-    
-    setLoadingMessageId(aiMessageId);
-    
-    setMessages(prev => [...prev, 
-      { id: tempId, sender: 'user', text: msg }, 
-      { id: aiMessageId, sender: 'ai', text: '' }
-    ]);
+  const msg = input.trim();
+  setInput('');
+  setIsLoading(true);
+  setError(null);
 
-    try {
-      let aiText = '';
-      
-      await sendToBot(msg, (chunk) => {
-        aiText += chunk;
-        
-        setMessages(prev => {
-          const updated = [...prev];
-          const aiIndex = updated.findIndex(m => m.id === aiMessageId);
-          if (aiIndex !== -1) {
-            updated[aiIndex].text = aiText;
-          }
-          return updated;
-        });
+  const tempId = Date.now();
+  const aiMessageId = tempId + 1;
+
+  setLoadingMessageId(aiMessageId);
+
+  setMessages(prev => [
+    ...prev,
+    { id: tempId, sender: 'user', text: msg },
+    { id: aiMessageId, sender: 'ai', text: '' }
+  ]);
+
+  try {
+    let aiText = '';
+
+    const citationMeta = await sendToBot(msg, (chunk) => {
+      aiText += chunk;
+
+      setMessages(prev => {
+        const updated = [...prev];
+        const aiIndex = updated.findIndex(m => m.id === aiMessageId);
+        if (aiIndex !== -1) {
+          updated[aiIndex].text = aiText;
+        }
+        return updated;
       });
-      
+    });
+
+    setMessages(prev => {
+      const updated = [...prev];
+      const aiIndex = updated.findIndex(m => m.id === aiMessageId);
+      if (aiIndex !== -1) {
+        updated[aiIndex].citations = citationMeta || [];
+      }
+      return updated;
+    });
+
     } catch (err) {
       console.error('Send error', err);
       setError("Failed to send message.");
@@ -121,38 +133,36 @@ export default function useChatMessages(navigate) {
     const res = await fetch(`${API_URL}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        message: message, 
-        uid: userId 
-      })
+      body: JSON.stringify({ message, uid: userId }),
     });
-    
-    if (!res.ok) {
-      throw new Error(`HTTP error! status: ${res.status}`);
-    }
-    
+
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+
     const reader = res.body.getReader();
     const decoder = new TextDecoder('utf-8');
-    
-    try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        
-        const chunk = decoder.decode(value, { stream: true });
-        
-        if (chunk) {
-          onChunk(chunk);
+    let fullText = '';
+    let citationMeta = null;
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+
+      if (chunk.includes('[[CITATION_META]]')) {
+        const match = chunk.match(/\[\[CITATION_META\]\](.*?)\[\[\/CITATION_META\]\]/s);
+        if (match) {
+          citationMeta = JSON.parse(match[1]);
         }
+      } else {
+        fullText += chunk;
+        onChunk(chunk);
       }
-      
-    } catch (error) {
-      console.error('Streaming error:', error);
-      throw error;
-    } finally {
-      reader.releaseLock();
     }
+
+    return citationMeta;
   };
+
 
   const handleDocumentUpload = async (file, message = '') => {
     if (!file || isLoading) return;
@@ -206,7 +216,7 @@ export default function useChatMessages(navigate) {
 
     const res = await fetch(`${API_URL}/chatDocument`, {
       method: 'POST',
-      body: formData // No Content-Type header for FormData
+      body: formData
     });
     
     if (!res.ok) {

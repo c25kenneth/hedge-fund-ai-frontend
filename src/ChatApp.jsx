@@ -5,7 +5,7 @@ import MessageBubble from './components/MessageBubble';
 import ChatInput from './components/ChatInput';
 import ErrorBanner from './components/ErrorBar';
 import useChatMessages from './services/ChatHooks';
-import PDFViewerPanel from './components/PDFViewerPanel';
+import DocumentPreview from './components/DocumentPreview';
 
 export default function ChatApp() {
   const navigate = useNavigate();
@@ -20,7 +20,7 @@ export default function ChatApp() {
     loadingMessageId,
     handleRefresh,
     signOutAndRedirect,
-    messagesEndRef, 
+    messagesEndRef,
     handleDocumentUpload,
   } = useChatMessages(navigate);
 
@@ -28,7 +28,23 @@ export default function ChatApp() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const [pdfUrl, setPdfUrl] = useState(null);
+  const [selectedDocument, setSelectedDocument] = useState(null);
+
+  const handleCitationClick = (href, message) => {
+    const documentCitations = message.citations?.filter(c => c.blob_url === href) || [];
+    
+    if (documentCitations.length > 0) {
+      const pageNumber = documentCitations[0].page_number?.[0] || 1;
+      
+      setSelectedDocument({
+        url: href,
+        pageNumber: pageNumber,
+        citations: documentCitations,
+        pageWidth: documentCitations[0].page_width || 8.5,
+        pageHeight: documentCitations[0].page_height || 11
+      });
+    }
+  };
 
   return (
     <div className="h-screen w-full flex flex-col bg-gray-50 dark:bg-gray-900">
@@ -52,19 +68,35 @@ export default function ChatApp() {
           </div>
         )}
         {messages.map((msg) => (
-          <MessageBubble 
-            key={msg.id} 
-            msg={msg} 
+          <MessageBubble
+            key={msg.id}
+            msg={msg}
             isLoading={msg.id === loadingMessageId && msg.sender === 'ai' && !msg.text}
-            onCitationClick={(href) => setPdfUrl(href)}
+            onCitationClick={(href) => handleCitationClick(href, msg)}
           />
         ))}
 
         <div ref={messagesEndRef} />
       </div>
 
-      <ChatInput value={input} onChange={setInput} onSend={handleSend} isLoading={isLoading} onFileUpload={handleDocumentUpload}/>
-      <PDFViewerPanel pdfUrl={pdfUrl} onClose={() => setPdfUrl(null)} />
+      <ChatInput
+        value={input}
+        onChange={setInput}
+        onSend={handleSend}
+        isLoading={isLoading}
+        onFileUpload={handleDocumentUpload}
+      />
+      
+      {selectedDocument && (
+        <DocumentPreview
+          url={selectedDocument.url}
+          pageNumber={selectedDocument.pageNumber}
+          citations={selectedDocument.citations}
+          pageWidth={selectedDocument.pageWidth}
+          pageHeight={selectedDocument.pageHeight}
+          onClose={() => setSelectedDocument(null)}
+        />
+      )}
     </div>
   );
 }

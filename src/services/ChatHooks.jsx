@@ -130,13 +130,13 @@ export default function useChatMessages(navigate) {
   };
 
   const sendToBot = async (message, onChunk) => {
-    const res = await fetch(`${API_URL}/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, uid: userId }),
-    });
+  const res = await fetch(`${API_URL}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, uid: userId }),
+  });
 
-    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+  if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder('utf-8');
@@ -149,20 +149,18 @@ export default function useChatMessages(navigate) {
 
       const chunk = decoder.decode(value, { stream: true });
 
-      if (chunk.includes('[[CITATION_META]]')) {
-        const match = chunk.match(/\[\[CITATION_META\]\](.*?)\[\[\/CITATION_META\]\]/s);
-        if (match) {
-          citationMeta = JSON.parse(match[1]);
-        }
-      } else {
-        fullText += chunk;
-        onChunk(chunk);
+      const citationMatch = chunk.match(/\[\[CITATION_META\]\](.*?)\[\[\/CITATION_META\]\]/s);
+      if (citationMatch) {
+        citationMeta = JSON.parse(citationMatch[1]);
       }
+
+      const cleanChunk = chunk.replace(/\[\[CITATION_META\]\].*?\[\[\/CITATION_META\]\]/gs, '');
+      fullText += cleanChunk;
+      if (cleanChunk) onChunk(cleanChunk);
     }
 
     return citationMeta;
   };
-
 
   const handleDocumentUpload = async (file, message = '') => {
     if (!file || isLoading) return;
